@@ -60,6 +60,12 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define endPointA_Pin GPIO_PIN_0
+#define endPointA_GPIO_Port GPIOA
+#define endPointA_EXTI_IRQn EXTI0_1_IRQn
+#define endPointB_Pin GPIO_PIN_1
+#define endPointB_GPIO_Port GPIOA
+#define endPointB_EXTI_IRQn EXTI0_1_IRQn
 #define back_Pin GPIO_PIN_2
 #define back_GPIO_Port GPIOA
 #define forward_Pin GPIO_PIN_3
@@ -68,10 +74,16 @@ void Error_Handler(void);
 #define aeration_GPIO_Port GPIOA
 #define outA_Pin GPIO_PIN_5
 #define outA_GPIO_Port GPIOA
+#define outB_Pin GPIO_PIN_6
+#define outB_GPIO_Port GPIOA
 #define PWM_Pin GPIO_PIN_7
 #define PWM_GPIO_Port GPIOA
-#define outB_Pin GPIO_PIN_9
-#define outB_GPIO_Port GPIOA
+#define statusLed_Pin GPIO_PIN_1
+#define statusLed_GPIO_Port GPIOB
+#define motorCS_Pin GPIO_PIN_9
+#define motorCS_GPIO_Port GPIOA
+#define motorEN_Pin GPIO_PIN_10
+#define motorEN_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
