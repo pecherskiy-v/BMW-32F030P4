@@ -78,12 +78,12 @@ void Error_Handler(void);
 #define outB_GPIO_Port GPIOA
 #define PWM_Pin GPIO_PIN_7
 #define PWM_GPIO_Port GPIOA
-#define statusLed_Pin GPIO_PIN_1
-#define statusLed_GPIO_Port GPIOB
-#define motorCS_Pin GPIO_PIN_9
-#define motorCS_GPIO_Port GPIOA
-#define motorEN_Pin GPIO_PIN_10
-#define motorEN_GPIO_Port GPIOA
+#define motorCurrentSense_Pin GPIO_PIN_1
+#define motorCurrentSense_GPIO_Port GPIOB
+#define statusLed_Pin GPIO_PIN_9
+#define statusLed_GPIO_Port GPIOA
+#define motorEN_DIAG_Pin GPIO_PIN_10
+#define motorEN_DIAG_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
