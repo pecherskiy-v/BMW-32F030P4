@@ -101,6 +101,7 @@ int main(void)
   HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_2);
 
   HAL_ADCEx_Calibration_Start(&hadc);
+  HAL_ADC_Start(&hadc);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -109,13 +110,10 @@ int main(void)
   #pragma ide diagnostic ignored "EndlessLoop"
   while (1)
   {
-//    HAL_GPIO_TogglePin(statusLed_GPIO_Port, statusLed_Pin);
-    HAL_ADC_Start(&hadc);
-    HAL_ADC_PollForConversion(&hadc, 100);
+
     abc = HAL_ADC_GetValue(&hadc);
+    //abc = (3.33/4095)*abc; // значение напряжения на пине.
 
-
-//    HAL_GPIO_TogglePin(statusLed_GPIO_Port, statusLed_Pin);
     HAL_Delay(1000);
     /* USER CODE END WHILE */
 
@@ -204,21 +202,7 @@ static void MX_ADC_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_9;
   sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-  sConfig.SamplingTime = ADC_SAMPLETIME_13CYCLES_5;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_VREFINT;
+  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     Error_Handler();
