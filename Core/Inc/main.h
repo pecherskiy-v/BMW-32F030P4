@@ -32,7 +32,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -47,7 +47,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+void getEndPointStatus();
 /* USER CODE END EM */
 
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
@@ -62,16 +62,17 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define endPointA_Pin GPIO_PIN_0
 #define endPointA_GPIO_Port GPIOA
-#define endPointA_EXTI_IRQn EXTI0_1_IRQn
 #define endPointB_Pin GPIO_PIN_1
 #define endPointB_GPIO_Port GPIOA
-#define endPointB_EXTI_IRQn EXTI0_1_IRQn
 #define back_Pin GPIO_PIN_2
 #define back_GPIO_Port GPIOA
+#define back_EXTI_IRQn EXTI2_3_IRQn
 #define forward_Pin GPIO_PIN_3
 #define forward_GPIO_Port GPIOA
+#define forward_EXTI_IRQn EXTI2_3_IRQn
 #define aeration_Pin GPIO_PIN_4
 #define aeration_GPIO_Port GPIOA
+#define aeration_EXTI_IRQn EXTI4_15_IRQn
 #define outA_Pin GPIO_PIN_5
 #define outA_GPIO_Port GPIOA
 #define outB_Pin GPIO_PIN_6
@@ -85,6 +86,16 @@ void Error_Handler(void);
 #define motorEN_DIAG_Pin GPIO_PIN_10
 #define motorEN_DIAG_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
+
+#define leftRotation 1                    // todo биты левого вращение
+#define rightRotation 2                   // todo биты правого вращения
+#define rotationStopped ((uint8_t)0x00U)  // togo биты остановки
+
+#define aeration    ((uint8_t)0x03U)  // 0011 A=1 B=1 првоертивание
+#define toAeration  ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе открытия на првоертивание
+#define closed      ((uint8_t)0x00U)  // 0000 A=0 B=0 закрыт
+#define toOpen      ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе полного открытия
+#define open        ((uint8_t)0x03U)  // 0011 A=1 B=1 полностью открылся
 
 /* USER CODE END Private defines */
 

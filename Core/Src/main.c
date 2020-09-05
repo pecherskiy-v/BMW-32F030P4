@@ -47,14 +47,26 @@ TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
 uint32_t abc = 0;
+bool motorEnable = false;
+bool readEndPoint = false;
+uint8_t directionOfRotation = rotationStopped;
+
+uint8_t target    = 0x00U;
+uint8_t subTarget = 0x00U;
+uint8_t endPoint  = 0x00U;
+
+uint32_t time_key = 0;
+bool longPush     = false;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_ADC_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -92,13 +104,16 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_TIM1_Init();
   MX_TIM3_Init();
   MX_ADC_Init();
+  MX_TIM1_Init();
+
+  /* Initialize interrupts */
+  MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start_IT(&htim1);
 
   HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_Base_Start_IT(&htim1);
 
   HAL_ADCEx_Calibration_Start(&hadc);
   HAL_ADC_Start(&hadc);
@@ -110,11 +125,38 @@ int main(void)
   #pragma ide diagnostic ignored "EndlessLoop"
   while (1)
   {
+    uint32_t ms = HAL_GetTick();
+    bool backPinState = HAL_GPIO_ReadPin(back_GPIO_Port, back_Pin) == GPIO_PIN_RESET;
+    bool forwardPinState = HAL_GPIO_ReadPin(forward_GPIO_Port, forward_Pin) == GPIO_PIN_RESET;
+    bool aerationPinState = HAL_GPIO_ReadPin(aeration_GPIO_Port, aeration_Pin) == GPIO_PIN_RESET;
+
+
+    if ((backPinState || forwardPinState || aerationPinState) && (ms - time_key) > 500) {
+      // засекли нажатие длинее 500мс
+      longPush = true;
+    }
+
+    if (!backPinState && !forwardPinState && !aerationPinState && longPush) {
+      // отпустил долго нажатую кнопку.
+      motorEnable = false;
+      longPush = false;
+      // нужно также отключить мотор от питания
+    }
 
     abc = HAL_ADC_GetValue(&hadc);
     //abc = (3.33/4095)*abc; // значение напряжения на пине.
 
-    HAL_Delay(1000);
+    if (endPoint == target) {
+      // достигли таргета. стопаем мотор
+      motorEnable = false;
+      // нужно также отключить мотор от питания
+    }
+
+    if (motorEnable) {
+      HAL_Delay(1000);
+      HAL_GPIO_TogglePin(statusLed_GPIO_Port, statusLed_Pin);
+    }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -159,6 +201,20 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief NVIC Configuration.
+  * @retval None
+  */
+static void MX_NVIC_Init(void)
+{
+  /* EXTI2_3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(EXTI2_3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_3_IRQn);
+  /* EXTI4_15_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 }
 
 /**
@@ -232,12 +288,12 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 480;
+  htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 50000;
+  htim1.Init.Period = 65535;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
   {
     Error_Handler();
@@ -337,13 +393,13 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : endPointA_Pin endPointB_Pin */
   GPIO_InitStruct.Pin = endPointA_Pin|endPointB_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : back_Pin forward_Pin aeration_Pin */
   GPIO_InitStruct.Pin = back_Pin|forward_Pin|aeration_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -361,14 +417,95 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
-
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  // просто засекаем тики в момент срабатывания прерывания.
+  time_key = HAL_GetTick();
 
+  if (GPIO_Pin == back_Pin) {
+    motorEnable = motorEnable != true;
+
+    if (endPoint == closed) {
+      // если люк закрыть, то шлем его на открытие
+      subTarget = toOpen;
+      target = open;
+      // разрешаем управление мотором
+      motorEnable = true;
+    }
+
+    if ((endPoint == aeration || endPoint == toAeration) && subTarget == toAeration) {
+      // если люк на проветривении или приоткрыт и направлене было проветривание, то закрывае
+      target = closed;
+    }
+  }
+
+  if (GPIO_Pin == forward_Pin) {
+    motorEnable = motorEnable != true;
+
+    if (endPoint == closed) {
+      // если люк закрыть, то шлем его на проветривание
+      subTarget = toAeration;
+      target = aeration;
+      // разрешаем управление мотором
+      motorEnable = true;
+    }
+
+    if ((endPoint == open || endPoint == toOpen) && subTarget == toOpen) {
+      // если люк открыт или приоткрыт и направлене было открытие, то закрывае
+      target = closed;
+    }
+  }
+
+  if (GPIO_Pin == aeration_Pin) {
+    motorEnable = motorEnable != true;
+
+    if (endPoint == closed) {
+      // если люк закрыть, то шлем его на проветривание
+      subTarget = toAeration;
+      target = aeration;
+      // разрешаем управление мотором
+      motorEnable = true;
+    }
+
+    if ((endPoint == aeration) && subTarget == toAeration) {
+      // если люк на проветривении и направлене было проветривание, то закрывае
+      target = closed;
+    }
+  }
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if(htim->Instance == TIM1) //check if the interrupt comes from TIM1
+  {
+    getEndPointStatus();
+  }
+}
+
+void getEndPointStatus()
+{
+  GPIO_PinState pinA = HAL_GPIO_ReadPin(endPointA_GPIO_Port, endPointA_Pin);
+  GPIO_PinState pinB = HAL_GPIO_ReadPin(endPointB_GPIO_Port, endPointB_Pin);
+
+  if ((pinA == GPIO_PIN_RESET) && (pinB == GPIO_PIN_RESET)) {
+    endPoint = endPointA_Pin | endPointB_Pin;
+  }
+
+  if ((pinA == GPIO_PIN_RESET) && (pinB == GPIO_PIN_SET)) {
+    endPoint = endPointA_Pin;
+  }
+
+  if ((pinA == GPIO_PIN_SET) && (pinB == GPIO_PIN_RESET)) {
+    endPoint = endPointB_Pin;
+  }
+
+  if ((pinA == GPIO_PIN_SET) && (pinB == GPIO_PIN_SET)) {
+    endPoint = 0;
+  }
+}
 /* USER CODE END 4 */
 
 /**
