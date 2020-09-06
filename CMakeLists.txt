@@ -35,11 +35,11 @@ PROJECT(BMW-32F030P4 C CXX ASM)
 set(CMAKE_CXX_STANDARD 11)
 
 #add_definitions(-DARM_MATH_CM4 -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING -D__FPU_PRESENT=1)
-add_definitions(-DUSE_HAL_DRIVER -DSTM32F030x6 -DDEBUG)
+add_definitions(-DUSE_HAL_DRIVER -DSTM32F030x6 -DUSE_FULL_LL_DRIVER -DDEBUG)
 
 file(GLOB_RECURSE SOURCES "Core/*.*" "Drivers/*.*")
 
-include_directories(Core/Inc Drivers/STM32F0xx_HAL_Driver/Inc Drivers/STM32F0xx_HAL_Driver/Inc/Legacy Drivers/CMSIS/Device/ST/STM32F0xx/Include Drivers/CMSIS/Include)
+include_directories(Core/Inc Drivers/STM32F0xx_HAL_Driver/Inc Drivers/CMSIS/Device/ST/STM32F0xx/Include Drivers/CMSIS/Include Drivers/STM32F0xx_HAL_Driver/Inc/Legacy)
 
 add_executable(${PROJECT_NAME}.elf ${SOURCES} ${LINKER_SCRIPT})
 

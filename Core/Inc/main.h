@@ -29,10 +29,23 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f0xx_hal.h"
+#include "stm32f0xx_ll_adc.h"
+#include "stm32f0xx_ll_crs.h"
+#include "stm32f0xx_ll_rcc.h"
+#include "stm32f0xx_ll_bus.h"
+#include "stm32f0xx_ll_system.h"
+#include "stm32f0xx_ll_exti.h"
+#include "stm32f0xx_ll_cortex.h"
+#include "stm32f0xx_ll_utils.h"
+#include "stm32f0xx_ll_pwr.h"
+#include "stm32f0xx_ll_dma.h"
+#include "stm32f0xx_ll_tim.h"
+#include "stm32f0xx_ll_gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
+//#include "../VNH2SP30/motordriver.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -49,8 +62,6 @@ extern "C" {
 /* USER CODE BEGIN EM */
 void getEndPointStatus();
 /* USER CODE END EM */
-
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
@@ -86,6 +97,14 @@ void Error_Handler(void);
 #define motorEN_DIAG_Pin GPIO_PIN_10
 #define motorEN_DIAG_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
+
+#define MD_A_EN motorEN_DIAG_Pin
+#define MD_A_CS motorCurrentSense_Pin
+#define MD_A_INA outA_Pin
+#define MD_A_INB outB_Pin
+#define MD_A_PWM PWM_Pin
+#define MD_PORT PWM_Pin
+
 
 #define leftRotation 1                    // todo биты левого вращение
 #define rightRotation 2                   // todo биты правого вращения

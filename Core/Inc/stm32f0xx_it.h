@@ -57,7 +57,7 @@ void EXTI4_15_IRQHandler(void);
 void TIM1_BRK_UP_TRG_COM_IRQHandler(void);
 void TIM3_IRQHandler(void);
 /* USER CODE BEGIN EFP */
-
+void TIM1_Callback(void);
 /* USER CODE END EFP */
 
 #ifdef __cplusplus
