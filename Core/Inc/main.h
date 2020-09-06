@@ -28,7 +28,6 @@ extern "C" {
 #endif
 
 /* Includes ------------------------------------------------------------------*/
-#include "stm32f0xx_hal.h"
 #include "stm32f0xx_ll_adc.h"
 #include "stm32f0xx_ll_crs.h"
 #include "stm32f0xx_ll_rcc.h"
@@ -41,6 +40,10 @@ extern "C" {
 #include "stm32f0xx_ll_dma.h"
 #include "stm32f0xx_ll_tim.h"
 #include "stm32f0xx_ll_gpio.h"
+
+#if defined(USE_FULL_ASSERT)
+#include "stm32_assert.h"
+#endif /* USE_FULL_ASSERT */
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -71,31 +74,43 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define endPointA_Pin GPIO_PIN_0
+#define endPointA_Pin LL_GPIO_PIN_0
 #define endPointA_GPIO_Port GPIOA
-#define endPointB_Pin GPIO_PIN_1
+#define endPointB_Pin LL_GPIO_PIN_1
 #define endPointB_GPIO_Port GPIOA
-#define back_Pin GPIO_PIN_2
+#define back_Pin LL_GPIO_PIN_2
 #define back_GPIO_Port GPIOA
 #define back_EXTI_IRQn EXTI2_3_IRQn
-#define forward_Pin GPIO_PIN_3
+#define forward_Pin LL_GPIO_PIN_3
 #define forward_GPIO_Port GPIOA
 #define forward_EXTI_IRQn EXTI2_3_IRQn
-#define aeration_Pin GPIO_PIN_4
+#define aeration_Pin LL_GPIO_PIN_4
 #define aeration_GPIO_Port GPIOA
 #define aeration_EXTI_IRQn EXTI4_15_IRQn
-#define outA_Pin GPIO_PIN_5
+#define outA_Pin LL_GPIO_PIN_5
 #define outA_GPIO_Port GPIOA
-#define outB_Pin GPIO_PIN_6
+#define outB_Pin LL_GPIO_PIN_6
 #define outB_GPIO_Port GPIOA
-#define PWM_Pin GPIO_PIN_7
+#define PWM_Pin LL_GPIO_PIN_7
 #define PWM_GPIO_Port GPIOA
-#define motorCurrentSense_Pin GPIO_PIN_1
+#define motorCurrentSense_Pin LL_GPIO_PIN_1
 #define motorCurrentSense_GPIO_Port GPIOB
-#define statusLed_Pin GPIO_PIN_9
+#define statusLed_Pin LL_GPIO_PIN_9
 #define statusLed_GPIO_Port GPIOA
-#define motorEN_DIAG_Pin GPIO_PIN_10
+#define motorEN_DIAG_Pin LL_GPIO_PIN_10
 #define motorEN_DIAG_GPIO_Port GPIOA
+#ifndef NVIC_PRIORITYGROUP_0
+#define NVIC_PRIORITYGROUP_0         ((uint32_t)0x00000007) /*!< 0 bit  for pre-emption priority,
+                                                                 4 bits for subpriority */
+#define NVIC_PRIORITYGROUP_1         ((uint32_t)0x00000006) /*!< 1 bit  for pre-emption priority,
+                                                                 3 bits for subpriority */
+#define NVIC_PRIORITYGROUP_2         ((uint32_t)0x00000005) /*!< 2 bits for pre-emption priority,
+                                                                 2 bits for subpriority */
+#define NVIC_PRIORITYGROUP_3         ((uint32_t)0x00000004) /*!< 3 bits for pre-emption priority,
+                                                                 1 bit  for subpriority */
+#define NVIC_PRIORITYGROUP_4         ((uint32_t)0x00000003) /*!< 4 bits for pre-emption priority,
+                                                                 0 bit  for subpriority */
+#endif
 /* USER CODE BEGIN Private defines */
 
 #define MD_A_EN motorEN_DIAG_Pin
@@ -110,12 +125,13 @@ void Error_Handler(void);
 #define rightRotation 2                   // todo биты правого вращения
 #define rotationStopped ((uint8_t)0x00U)  // togo биты остановки
 
-#define aeration    ((uint8_t)0x03U)  // 0011 A=1 B=1 првоертивание
-#define toAeration  ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе открытия на првоертивание
-#define closed      ((uint8_t)0x00U)  // 0000 A=0 B=0 закрыт
-#define toOpen      ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе полного открытия
-#define open        ((uint8_t)0x03U)  // 0011 A=1 B=1 полностью открылся
+#define aeration    ((uint8_t)0x00U)  // 0000 A=0 B=0 првоертивание
+#define toAeration  ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе открытия на првоертивание
+#define closed      ((uint8_t)0x03U)  // 0011 A=1 B=1 закрыт
+#define toOpen      ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе полного открытия
+#define open        ((uint8_t)0x00U)  // 0000 A=0 B=0 полностью открылся
 
+#define delayPushTime ((uint32_t)0x12CU)
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

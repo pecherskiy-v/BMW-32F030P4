@@ -58,6 +58,7 @@ void TIM1_BRK_UP_TRG_COM_IRQHandler(void);
 void TIM3_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 void TIM1_Callback(void);
+void GPIO_EXTI_Callback(uint32_t GPIO_Pin);
 /* USER CODE END EFP */
 
 #ifdef __cplusplus

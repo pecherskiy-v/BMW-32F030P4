@@ -85,7 +85,11 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+
+  LL_APB1_GRP2_EnableClock(LL_APB1_GRP2_PERIPH_SYSCFG);
+  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
+
+  /* System interrupt init*/
 
   /* USER CODE BEGIN Init */
 
@@ -140,18 +144,15 @@ int main(void)
   #pragma ide diagnostic ignored "EndlessLoop"
   while (1)
   {
-    uint32_t ms = HAL_GetTick();
-    bool backPinState = HAL_GPIO_ReadPin(back_GPIO_Port, back_Pin) == GPIO_PIN_RESET;
-    bool forwardPinState = HAL_GPIO_ReadPin(forward_GPIO_Port, forward_Pin) == GPIO_PIN_RESET;
-    bool aerationPinState = HAL_GPIO_ReadPin(aeration_GPIO_Port, aeration_Pin) == GPIO_PIN_RESET;
-
-
-    if ((backPinState || forwardPinState || aerationPinState) && (ms - time_key) > 500) {
+    if (
+            (LL_GPIO_ReadInputPort(back_GPIO_Port) & (back_Pin | forward_Pin | aeration_Pin)) != 28
+            && (time_key - SysTick->VAL) > 500
+            ) {
       // засекли нажатие длинее 500мс
       longPush = true;
     }
 
-    if (!backPinState && !forwardPinState && !aerationPinState && longPush) {
+    if ((LL_GPIO_ReadInputPort(back_GPIO_Port)&(back_Pin | forward_Pin | aeration_Pin)) == 28 && longPush) {
       // отпустил долго нажатую кнопку.
       motorEnable = false;
       longPush = false;
@@ -159,7 +160,7 @@ int main(void)
 //      MotorDriver__turnOffMotor(motorDriver);
     }
 
-//    abc = HAL_ADC_GetValue(&hadc);
+    //abc = HAL_ADC_GetValue(&hadc);
     //abc = (3.33/4095)*abc; // значение напряжения на пине.
 
     if (endPoint == target) {
@@ -170,8 +171,10 @@ int main(void)
     }
 
     if (motorEnable) {
-      HAL_Delay(1000);
-      HAL_GPIO_TogglePin(statusLed_GPIO_Port, statusLed_Pin);
+      LL_mDelay(500);
+      LL_GPIO_SetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
+      LL_mDelay(500);
+      LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
     }
 
     /* USER CODE END WHILE */
@@ -224,13 +227,8 @@ void SystemClock_Config(void)
   {
 
   }
+  LL_Init1msTick(48000000);
   LL_SetSystemCoreClock(48000000);
-
-   /* Update the time base */
-  if (HAL_InitTick (TICK_INT_PRIORITY) != HAL_OK)
-  {
-    Error_Handler();
-  }
   LL_RCC_HSI14_EnableADCControl();
 }
 
@@ -241,11 +239,11 @@ void SystemClock_Config(void)
 static void MX_NVIC_Init(void)
 {
   /* EXTI2_3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(EXTI2_3_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI2_3_IRQn);
+  NVIC_SetPriority(EXTI2_3_IRQn, 0);
+  NVIC_EnableIRQ(EXTI2_3_IRQn);
   /* EXTI4_15_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+  NVIC_SetPriority(EXTI4_15_IRQn, 0);
+  NVIC_EnableIRQ(EXTI4_15_IRQn);
 }
 
 /**
@@ -272,10 +270,10 @@ void MX_ADC_Init(void)
   /**ADC GPIO Configuration
   PB1   ------> ADC_IN9
   */
-  GPIO_InitStruct.Pin = LL_GPIO_PIN_1;
+  GPIO_InitStruct.Pin = motorCurrentSense_Pin;
   GPIO_InitStruct.Mode = LL_GPIO_MODE_ANALOG;
   GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
-  LL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  LL_GPIO_Init(motorCurrentSense_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN ADC_Init 1 */
 
@@ -395,13 +393,13 @@ void MX_TIM3_Init(void)
   /**TIM3 GPIO Configuration
   PA7   ------> TIM3_CH2
   */
-  GPIO_InitStruct.Pin = LL_GPIO_PIN_7;
+  GPIO_InitStruct.Pin = PWM_Pin;
   GPIO_InitStruct.Mode = LL_GPIO_MODE_ALTERNATE;
   GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
   GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
   GPIO_InitStruct.Alternate = LL_GPIO_AF_1;
-  LL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  LL_GPIO_Init(PWM_GPIO_Port, &GPIO_InitStruct);
 
 }
 
@@ -412,49 +410,125 @@ void MX_TIM3_Init(void)
   */
 void MX_GPIO_Init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  LL_EXTI_InitTypeDef EXTI_InitStruct = {0};
+  LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOF_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+  LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOF);
+  LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOA);
+  LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOB);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, outA_Pin|outB_Pin|statusLed_Pin|motorEN_DIAG_Pin, GPIO_PIN_RESET);
+  /**/
+  LL_GPIO_ResetOutputPin(outA_GPIO_Port, outA_Pin);
 
-  /*Configure GPIO pins : endPointA_Pin endPointB_Pin */
-  GPIO_InitStruct.Pin = endPointA_Pin|endPointB_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  /**/
+  LL_GPIO_ResetOutputPin(outB_GPIO_Port, outB_Pin);
 
-  /*Configure GPIO pins : back_Pin forward_Pin aeration_Pin */
-  GPIO_InitStruct.Pin = back_Pin|forward_Pin|aeration_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  /**/
+  LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
 
-  /*Configure GPIO pins : outA_Pin outB_Pin */
-  GPIO_InitStruct.Pin = outA_Pin|outB_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  /**/
+  LL_GPIO_ResetOutputPin(motorEN_DIAG_GPIO_Port, motorEN_DIAG_Pin);
 
-  /*Configure GPIO pins : statusLed_Pin motorEN_DIAG_Pin */
-  GPIO_InitStruct.Pin = statusLed_Pin|motorEN_DIAG_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  /**/
+  GPIO_InitStruct.Pin = endPointA_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
+  LL_GPIO_Init(endPointA_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = endPointB_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
+  LL_GPIO_Init(endPointB_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = outA_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_DOWN;
+  LL_GPIO_Init(outA_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = outB_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_DOWN;
+  LL_GPIO_Init(outB_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = statusLed_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
+  LL_GPIO_Init(statusLed_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = motorEN_DIAG_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
+  LL_GPIO_Init(motorEN_DIAG_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  LL_SYSCFG_SetEXTISource(LL_SYSCFG_EXTI_PORTA, LL_SYSCFG_EXTI_LINE2);
+
+  /**/
+  LL_SYSCFG_SetEXTISource(LL_SYSCFG_EXTI_PORTA, LL_SYSCFG_EXTI_LINE3);
+
+  /**/
+  LL_SYSCFG_SetEXTISource(LL_SYSCFG_EXTI_PORTA, LL_SYSCFG_EXTI_LINE4);
+
+  /**/
+  LL_GPIO_SetPinPull(back_GPIO_Port, back_Pin, LL_GPIO_PULL_UP);
+
+  /**/
+  LL_GPIO_SetPinPull(forward_GPIO_Port, forward_Pin, LL_GPIO_PULL_UP);
+
+  /**/
+  LL_GPIO_SetPinPull(aeration_GPIO_Port, aeration_Pin, LL_GPIO_PULL_UP);
+
+  /**/
+  LL_GPIO_SetPinMode(back_GPIO_Port, back_Pin, LL_GPIO_MODE_INPUT);
+
+  /**/
+  LL_GPIO_SetPinMode(forward_GPIO_Port, forward_Pin, LL_GPIO_MODE_INPUT);
+
+  /**/
+  LL_GPIO_SetPinMode(aeration_GPIO_Port, aeration_Pin, LL_GPIO_MODE_INPUT);
+
+  /**/
+  EXTI_InitStruct.Line_0_31 = LL_EXTI_LINE_2;
+  EXTI_InitStruct.LineCommand = ENABLE;
+  EXTI_InitStruct.Mode = LL_EXTI_MODE_IT;
+  EXTI_InitStruct.Trigger = LL_EXTI_TRIGGER_FALLING;
+  LL_EXTI_Init(&EXTI_InitStruct);
+
+  /**/
+  EXTI_InitStruct.Line_0_31 = LL_EXTI_LINE_3;
+  EXTI_InitStruct.LineCommand = ENABLE;
+  EXTI_InitStruct.Mode = LL_EXTI_MODE_IT;
+  EXTI_InitStruct.Trigger = LL_EXTI_TRIGGER_FALLING;
+  LL_EXTI_Init(&EXTI_InitStruct);
+
+  /**/
+  EXTI_InitStruct.Line_0_31 = LL_EXTI_LINE_4;
+  EXTI_InitStruct.LineCommand = ENABLE;
+  EXTI_InitStruct.Mode = LL_EXTI_MODE_IT;
+  EXTI_InitStruct.Trigger = LL_EXTI_TRIGGER_FALLING;
+  LL_EXTI_Init(&EXTI_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+void GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   // просто засекаем тики в момент срабатывания прерывания.
-  time_key = HAL_GetTick();
+  time_key = SysTick->VAL;
 
   if (GPIO_Pin == back_Pin) {
     motorEnable = motorEnable != true;
@@ -519,24 +593,8 @@ void TIM1_Callback(void)
 
 void getEndPointStatus()
 {
-  GPIO_PinState pinA = HAL_GPIO_ReadPin(endPointA_GPIO_Port, endPointA_Pin);
-  GPIO_PinState pinB = HAL_GPIO_ReadPin(endPointB_GPIO_Port, endPointB_Pin);
-
-  if ((pinA == GPIO_PIN_RESET) && (pinB == GPIO_PIN_RESET)) {
-    endPoint = endPointA_Pin | endPointB_Pin;
-  }
-
-  if ((pinA == GPIO_PIN_RESET) && (pinB == GPIO_PIN_SET)) {
-    endPoint = endPointA_Pin;
-  }
-
-  if ((pinA == GPIO_PIN_SET) && (pinB == GPIO_PIN_RESET)) {
-    endPoint = endPointB_Pin;
-  }
-
-  if ((pinA == GPIO_PIN_SET) && (pinB == GPIO_PIN_SET)) {
-    endPoint = 0;
-  }
+  endPoint = (LL_GPIO_ReadInputPort(endPointA_GPIO_Port)&endPointA_Pin) |
+          (LL_GPIO_ReadInputPort(endPointB_GPIO_Port)&endPointB_Pin) ;
 }
 /* USER CODE END 4 */
 
