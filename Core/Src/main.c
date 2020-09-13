@@ -41,27 +41,49 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+TIM_HandleTypeDef htim14;
+TIM_HandleTypeDef htim16;
+TIM_HandleTypeDef htim17;
+
 /* USER CODE BEGIN PV */
 //uint32_t abc = 0;
+bool longPush = false;
 bool motorEnable = false;
-bool readEndPoint = false;
-uint8_t directionOfRotation = rotationStopped;
-
-uint8_t target    = 0x00U;
+uint8_t target = 0x00U;
 uint8_t subTarget = 0x00U;
-uint8_t endPoint  = 0x00U;
+uint8_t endPoint = 0x00U;
 
-uint32_t time_key = 0;
-bool longPush     = false;
+bool stopAfterLongPush = false;
+
+volatile uint32_t aeration_time_irq = 0;
+volatile uint32_t forward_time_irq = 0;
+volatile uint32_t back_time_irq = 0;
+
+volatile bool longPushLock = false;
+
+MotorState motorState = BRAKETOGND;
+MotorState lastMotorState = BRAKETOGND;
+Scenario selectScenario = WAIT;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+
 void MX_GPIO_Init(void);
+
 void MX_TIM3_Init(void);
+
 void MX_ADC_Init(void);
+
 void MX_TIM1_Init(void);
+
+static void MX_TIM14_Init(void);
+
+static void MX_TIM16_Init(void);
+
+static void MX_TIM17_Init(void);
+
 static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -76,8 +98,7 @@ static void MX_NVIC_Init(void);
   * @brief  The application entry point.
   * @retval int
   */
-int main(void)
-{
+int main(void) {
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -85,11 +106,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
-  LL_APB1_GRP2_EnableClock(LL_APB1_GRP2_PERIPH_SYSCFG);
-  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
-
-  /* System interrupt init*/
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -107,6 +124,9 @@ int main(void)
   MX_TIM3_Init();
   MX_ADC_Init();
   MX_TIM1_Init();
+  MX_TIM14_Init();
+  MX_TIM16_Init();
+  MX_TIM17_Init();
 
   /* Initialize interrupts */
   MX_NVIC_Init();
@@ -123,65 +143,100 @@ int main(void)
 //  HAL_ADCEx_Calibration_Start(&hadc);
 //  HAL_ADC_Start(&hadc);
 
-//  MotorDriver *motorDriver = MotorDriver__create(
-////          MD_A_EN,
-////          motorEN_DIAG_GPIO_Port,
-////          MD_A_CS,
-////          motorCurrentSense_GPIO_Port,
-////          MD_A_INA,
-////          outA_GPIO_Port,
-////          MD_A_INB,
-////          outB_GPIO_Port,
-//          FULLBRIDGE
-//          );
-
+  MotorDriver__init(FULLBRIDGE);
+  LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
 //  MotorDriver__turnOffMotor(motorDriver);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  #pragma clang diagnostic push
-  #pragma ide diagnostic ignored "EndlessLoop"
-  while (1)
-  {
-    if (
-            (LL_GPIO_ReadInputPort(back_GPIO_Port) & (back_Pin | forward_Pin | aeration_Pin)) != 28
-            && (time_key - SysTick->VAL) > 500
-            ) {
-      // засекли нажатие длинее 500мс
-      longPush = true;
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "EndlessLoop"
+  while (1) {
+    longPush = false;
+    if (!(LL_GPIO_ReadInputPort(back_GPIO_Port) & back_Pin)) {
+      if ((HAL_GetTick() - back_time_irq) > logPushTime) {
+        // засекли нажатие длинее 500мс
+        if (longPushLock) {
+          longPush = false;
+        } else {
+          longPush = true;
+        }
+      }
     }
 
-    if ((LL_GPIO_ReadInputPort(back_GPIO_Port)&(back_Pin | forward_Pin | aeration_Pin)) == 28 && longPush) {
-      // отпустил долго нажатую кнопку.
-      motorEnable = false;
-      longPush = false;
-      // нужно также отключить мотор от питания
-//      MotorDriver__turnOffMotor(motorDriver);
+    if (!(LL_GPIO_ReadInputPort(forward_GPIO_Port) & forward_Pin)) {
+      if ((HAL_GetTick() - forward_time_irq) > logPushTime) {
+        // засекли нажатие длинее 500мс
+        if (longPushLock) {
+          longPush = false;
+        } else {
+          longPush = true;
+        }
+      }
+    }
+
+    if (!(LL_GPIO_ReadInputPort(aeration_GPIO_Port) & aeration_Pin)) {
+      if ((HAL_GetTick() - aeration_time_irq) > logPushTime) {
+        // засекли нажатие длинее 500мс
+        if (longPushLock) {
+          longPush = false;
+        } else {
+          longPush = true;
+        }
+      }
     }
 
     //abc = HAL_ADC_GetValue(&hadc);
     //abc = (3.33/4095)*abc; // значение напряжения на пине.
 
-    if (endPoint == target) {
-      // достигли таргета. стопаем мотор
+    if (!longPush && stopAfterLongPush) {
       motorEnable = false;
-      // нужно также отключить мотор от питания
-//      MotorDriver__turnOffMotor(motorDriver);
+      stopAfterLongPush = false;
     }
 
-    if (motorEnable) {
-      LL_mDelay(500);
+    if (endPoint == closed) {
       LL_GPIO_SetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
-      LL_mDelay(500);
+    } else {
       LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
+    }
+
+    switch (selectScenario) {
+      case AERATION:
+        aerationScenario();
+        break;
+      case BACK:
+        backScenario();
+        break;
+      case FORWARD:
+        forwardScenario();
+        break;
+      case CLOSED:
+        closedScenario();
+        break;
+      case WAIT:
+      default:
+        MotorDriver__turnOffMotor();
+        motorEnable = false;
+        break;
+    }
+
+    if (longPush) {
+      MotorDriver__turnOnMotor(motorState);
+      stopAfterLongPush = true;
+    } else {
+      if (motorEnable) {
+        MotorDriver__turnOnMotor(motorState);
+      } else {
+        MotorDriver__turnOffMotor();
+      }
     }
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
-  #pragma clang diagnostic pop
+#pragma clang diagnostic pop
   /* USER CODE END 3 */
 }
 
@@ -189,46 +244,44 @@ int main(void)
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void)
-{
+void SystemClock_Config(void) {
   LL_FLASH_SetLatency(LL_FLASH_LATENCY_1);
-  while(LL_FLASH_GetLatency() != LL_FLASH_LATENCY_1)
-  {
+  while (LL_FLASH_GetLatency() != LL_FLASH_LATENCY_1) {
   }
   LL_RCC_HSE_Enable();
 
-   /* Wait till HSE is ready */
-  while(LL_RCC_HSE_IsReady() != 1)
-  {
+  /* Wait till HSE is ready */
+  while (LL_RCC_HSE_IsReady() != 1) {
 
   }
   LL_RCC_HSI14_Enable();
 
-   /* Wait till HSI14 is ready */
-  while(LL_RCC_HSI14_IsReady() != 1)
-  {
+  /* Wait till HSI14 is ready */
+  while (LL_RCC_HSI14_IsReady() != 1) {
 
   }
   LL_RCC_HSI14_SetCalibTrimming(16);
   LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSE_DIV_1, LL_RCC_PLL_MUL_6);
   LL_RCC_PLL_Enable();
 
-   /* Wait till PLL is ready */
-  while(LL_RCC_PLL_IsReady() != 1)
-  {
+  /* Wait till PLL is ready */
+  while (LL_RCC_PLL_IsReady() != 1) {
 
   }
   LL_RCC_SetAHBPrescaler(LL_RCC_SYSCLK_DIV_1);
   LL_RCC_SetAPB1Prescaler(LL_RCC_APB1_DIV_1);
   LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_PLL);
 
-   /* Wait till System clock is ready */
-  while(LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL)
-  {
+  /* Wait till System clock is ready */
+  while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL) {
 
   }
-  LL_Init1msTick(48000000);
   LL_SetSystemCoreClock(48000000);
+
+  /* Update the time base */
+  if (HAL_InitTick(TICK_INT_PRIORITY) != HAL_OK) {
+    Error_Handler();
+  }
   LL_RCC_HSI14_EnableADCControl();
 }
 
@@ -236,8 +289,7 @@ void SystemClock_Config(void)
   * @brief NVIC Configuration.
   * @retval None
   */
-static void MX_NVIC_Init(void)
-{
+static void MX_NVIC_Init(void) {
   /* EXTI2_3_IRQn interrupt configuration */
   NVIC_SetPriority(EXTI2_3_IRQn, 0);
   NVIC_EnableIRQ(EXTI2_3_IRQn);
@@ -251,8 +303,7 @@ static void MX_NVIC_Init(void)
   * @param None
   * @retval None
   */
-void MX_ADC_Init(void)
-{
+void MX_ADC_Init(void) {
 
   /* USER CODE BEGIN ADC_Init 0 */
 
@@ -307,8 +358,7 @@ void MX_ADC_Init(void)
   * @param None
   * @retval None
   */
-void MX_TIM1_Init(void)
-{
+void MX_TIM1_Init(void) {
 
   /* USER CODE BEGIN TIM1_Init 0 */
 
@@ -347,8 +397,7 @@ void MX_TIM1_Init(void)
   * @param None
   * @retval None
   */
-void MX_TIM3_Init(void)
-{
+void MX_TIM3_Init(void) {
 
   /* USER CODE BEGIN TIM3_Init 0 */
 
@@ -404,12 +453,109 @@ void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM14 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM14_Init(void) {
+
+  /* USER CODE BEGIN TIM14_Init 0 */
+
+  /* USER CODE END TIM14_Init 0 */
+
+  /* USER CODE BEGIN TIM14_Init 1 */
+
+  /* USER CODE END TIM14_Init 1 */
+  htim14.Instance = TIM14;
+  htim14.Init.Prescaler = 959;
+  htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim14.Init.Period = 12500;
+  htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim14) != HAL_OK) {
+    Error_Handler();
+  }
+  if (HAL_TIM_OnePulse_Init(&htim14, TIM_OPMODE_SINGLE) != HAL_OK) {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM14_Init 2 */
+
+  /* USER CODE END TIM14_Init 2 */
+
+}
+
+/**
+  * @brief TIM16 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM16_Init(void) {
+
+  /* USER CODE BEGIN TIM16_Init 0 */
+
+  /* USER CODE END TIM16_Init 0 */
+
+  /* USER CODE BEGIN TIM16_Init 1 */
+
+  /* USER CODE END TIM16_Init 1 */
+  htim16.Instance = TIM16;
+  htim16.Init.Prescaler = 959;
+  htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim16.Init.Period = 12500;
+  htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim16.Init.RepetitionCounter = 0;
+  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim16) != HAL_OK) {
+    Error_Handler();
+  }
+  if (HAL_TIM_OnePulse_Init(&htim16, TIM_OPMODE_SINGLE) != HAL_OK) {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM16_Init 2 */
+
+  /* USER CODE END TIM16_Init 2 */
+
+}
+
+/**
+  * @brief TIM17 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM17_Init(void) {
+
+  /* USER CODE BEGIN TIM17_Init 0 */
+
+  /* USER CODE END TIM17_Init 0 */
+
+  /* USER CODE BEGIN TIM17_Init 1 */
+
+  /* USER CODE END TIM17_Init 1 */
+  htim17.Instance = TIM17;
+  htim17.Init.Prescaler = 959;
+  htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim17.Init.Period = 12500;
+  htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim17.Init.RepetitionCounter = 0;
+  htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim17) != HAL_OK) {
+    Error_Handler();
+  }
+  if (HAL_TIM_OnePulse_Init(&htim17, TIM_OPMODE_SINGLE) != HAL_OK) {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM17_Init 2 */
+
+  /* USER CODE END TIM17_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
   */
-void MX_GPIO_Init(void)
-{
+void MX_GPIO_Init(void) {
   LL_EXTI_InitTypeDef EXTI_InitStruct = {0};
   LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
 
@@ -426,9 +572,6 @@ void MX_GPIO_Init(void)
 
   /**/
   LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
-
-  /**/
-  LL_GPIO_ResetOutputPin(motorEN_DIAG_GPIO_Port, motorEN_DIAG_Pin);
 
   /**/
   GPIO_InitStruct.Pin = endPointA_Pin;
@@ -463,14 +606,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
   GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-  GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_DOWN;
   LL_GPIO_Init(statusLed_GPIO_Port, &GPIO_InitStruct);
 
   /**/
   GPIO_InitStruct.Pin = motorEN_DIAG_Pin;
-  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
-  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
   LL_GPIO_Init(motorEN_DIAG_GPIO_Port, &GPIO_InitStruct);
 
@@ -525,76 +666,201 @@ void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-  // просто засекаем тики в момент срабатывания прерывания.
-  time_key = SysTick->VAL;
-
+void GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
   if (GPIO_Pin == back_Pin) {
-    motorEnable = motorEnable != true;
+    selectScenario = WAIT;
+    motorEnable = motorEnable == false;
+    HAL_NVIC_DisableIRQ(back_EXTI_IRQn); // сразу же отключаем прерывания на этом пине
+    back_time_irq = HAL_GetTick();
+    HAL_TIM_Base_Start_IT(&back_htim); // запускаем таймер
+    longPushLock = false;
 
-    if (endPoint == closed) {
-      // если люк закрыть, то шлем его на открытие
-      subTarget = toOpen;
-      target = open;
-      // разрешаем управление мотором
-      motorEnable = true;
+    if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = BACK;
     }
 
-    if ((endPoint == aeration || endPoint == toAeration) && subTarget == toAeration) {
-      // если люк на проветривении или приоткрыт и направлене было проветривание, то закрывае
-      target = closed;
+    if (endPoint == toAeration && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = CLOSED;
+    }
+
+    if (endPoint == toOpen && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = BACK;
     }
   }
 
   if (GPIO_Pin == forward_Pin) {
-    motorEnable = motorEnable != true;
+    selectScenario = WAIT;
+    motorEnable = motorEnable == false;
+    HAL_NVIC_DisableIRQ(forward_EXTI_IRQn); // сразу же отключаем прерывания на этом пине
+    forward_time_irq = HAL_GetTick();
+    HAL_TIM_Base_Start_IT(&forward_htim); // запускаем таймер
+    longPushLock = false;
 
-    if (endPoint == closed) {
-      // если люк закрыть, то шлем его на проветривание
-      subTarget = toAeration;
-      target = aeration;
-      // разрешаем управление мотором
-      motorEnable = true;
+    if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = AERATION;
     }
 
-    if ((endPoint == open || endPoint == toOpen) && subTarget == toOpen) {
-      // если люк открыт или приоткрыт и направлене было открытие, то закрывае
-      target = closed;
+    if (endPoint == open && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = FORWARD;
+    }
+
+    if (endPoint == toOpen && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = FORWARD;
     }
   }
 
   if (GPIO_Pin == aeration_Pin) {
-    motorEnable = motorEnable != true;
+    selectScenario = WAIT;
+    motorEnable = motorEnable == false;
+    HAL_NVIC_DisableIRQ(aeration_EXTI_IRQn); // сразу же отключаем прерывания на этом пине
+    aeration_time_irq = HAL_GetTick();
+    HAL_TIM_Base_Start_IT(&aeration_htim); // запускаем таймер
+    longPushLock = false;
 
-    if (endPoint == closed) {
-      // если люк закрыть, то шлем его на проветривание
-      subTarget = toAeration;
-      target = aeration;
-      // разрешаем управление мотором
-      motorEnable = true;
+    if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = AERATION;
     }
 
-    if ((endPoint == aeration) && subTarget == toAeration) {
-      // если люк на проветривении и направлене было проветривание, то закрывае
-      target = closed;
+    if (endPoint == toAeration && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = CLOSED;
+    }
+
+    if (endPoint == toOpen && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = FORWARD;
+    }
+
+    if (endPoint == open && MotorDriver__getMotorState() == BRAKETOGND) {
+      selectScenario = FORWARD;
     }
   }
 }
 
-void TIM1_Callback(void)
-{
-  if(LL_TIM_IsActiveFlag_UPDATE(TIM1))
-  {
+void TIM1_Callback(void) {
+  if (LL_TIM_IsActiveFlag_UPDATE(TIM1)) {
     LL_TIM_ClearFlag_UPDATE(TIM1);
     getEndPointStatus();
   }
 }
 
-void getEndPointStatus()
+void aerationScenario(void)
 {
-  endPoint = (LL_GPIO_ReadInputPort(endPointA_GPIO_Port)&endPointA_Pin) |
-          (LL_GPIO_ReadInputPort(endPointB_GPIO_Port)&endPointB_Pin) ;
+  // start 00
+  if (endPoint == closed) {
+    motorEnable = true;
+    motorState = CLOCKWISE;
+  }
+
+  // wait 01
+  if (endPoint == toAeration) {
+    // stop
+    motorEnable = false;
+    motorState = BRAKETOGND;
+    longPushLock = true;
+    selectScenario = WAIT;
+  }
+}
+void closedScenario(void)
+{
+  // start 01
+  if (endPoint == toAeration) {
+    motorEnable = true;
+    motorState = COUNTERCLOCKWISE;
+  }
+
+  // wait 10
+  if (endPoint == toOpen && motorEnable) {
+    motorEnable = false;
+    motorState = BRAKETOGND;
+  }
+
+  // rollback 00
+  if (endPoint == toOpen && !motorEnable) {
+    motorEnable = true;
+    motorState = CLOCKWISE;
+  }
+
+  if (endPoint == closed && motorState == CLOCKWISE) {
+    motorEnable = false;
+    motorState = BRAKETOGND;
+    longPushLock = true;
+    selectScenario = WAIT;
+  }
+}
+void backScenario(void)
+{
+  if (endPoint == toAeration) {
+    closedScenario();
+  } else {
+    // start 00
+    if (endPoint == closed || endPoint == toOpen) {
+      motorEnable = true;
+      motorState = COUNTERCLOCKWISE;
+    }
+    // wait 11
+    if (endPoint == open) {
+      motorEnable = false;
+      motorState = BRAKETOGND;
+      longPushLock = true;
+      selectScenario = WAIT;
+    }
+    // stop
+  }
+}
+void forwardScenario(void)
+{
+  if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
+    // start 00
+    aerationScenario();
+  } else {
+    // start 10 || 11
+    if (endPoint == open || endPoint == toOpen) {
+      motorEnable = true;
+      motorState = CLOCKWISE;
+    }
+
+    // wait 00
+    if (endPoint == closed) {
+      // stop
+      motorEnable = false;
+      motorState = BRAKETOGND;
+      longPushLock = true;
+      selectScenario = WAIT;
+    }
+  }
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+  if (htim->Instance == aeration_tim) {
+    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
+    HAL_TIM_Base_Stop_IT(&aeration_htim); // останавливаем таймер
+
+    __HAL_GPIO_EXTI_CLEAR_IT(aeration_Pin);  // очищаем бит EXTI_PR
+    NVIC_ClearPendingIRQ(aeration_EXTI_IRQn); // очищаем бит NVIC_ICPRx
+    HAL_NVIC_EnableIRQ(aeration_EXTI_IRQn);   // включаем внешнее прерывание
+  }
+
+  if (htim->Instance == forward_tim) {
+    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
+    HAL_TIM_Base_Stop_IT(&forward_htim); // останавливаем таймер
+
+    __HAL_GPIO_EXTI_CLEAR_IT(forward_Pin);  // очищаем бит EXTI_PR
+    NVIC_ClearPendingIRQ(forward_EXTI_IRQn); // очищаем бит NVIC_ICPRx
+    HAL_NVIC_EnableIRQ(forward_EXTI_IRQn);   // включаем внешнее прерывание
+  }
+
+  if (htim->Instance == back_tim) {
+    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
+    HAL_TIM_Base_Stop_IT(&back_htim); // останавливаем таймер
+
+    __HAL_GPIO_EXTI_CLEAR_IT(back_Pin);  // очищаем бит EXTI_PR
+    NVIC_ClearPendingIRQ(back_EXTI_IRQn); // очищаем бит NVIC_ICPRx
+    HAL_NVIC_EnableIRQ(back_EXTI_IRQn);   // включаем внешнее прерывание
+  }
+}
+
+void getEndPointStatus() {
+  endPoint = (LL_GPIO_ReadInputPort(endPointA_GPIO_Port) & endPointA_Pin) |
+             (LL_GPIO_ReadInputPort(endPointB_GPIO_Port) & endPointB_Pin);
 }
 /* USER CODE END 4 */
 
@@ -602,8 +868,7 @@ void getEndPointStatus()
   * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
-void Error_Handler(void)
-{
+void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
 

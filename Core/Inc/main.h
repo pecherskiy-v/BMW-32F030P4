@@ -28,6 +28,7 @@ extern "C" {
 #endif
 
 /* Includes ------------------------------------------------------------------*/
+#include "stm32f0xx_hal.h"
 #include "stm32f0xx_ll_adc.h"
 #include "stm32f0xx_ll_crs.h"
 #include "stm32f0xx_ll_rcc.h"
@@ -41,14 +42,11 @@ extern "C" {
 #include "stm32f0xx_ll_tim.h"
 #include "stm32f0xx_ll_gpio.h"
 
-#if defined(USE_FULL_ASSERT)
-#include "stm32_assert.h"
-#endif /* USE_FULL_ASSERT */
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
-//#include "../VNH2SP30/motordriver.h"
+#include <stdlib.h>
+#include "../VNH2SP30/motordriver.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -63,7 +61,11 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-void getEndPointStatus();
+void getEndPointStatus(void);
+void aerationScenario(void);
+void closedScenario(void);
+void backScenario(void);
+void forwardScenario(void);
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -74,6 +76,12 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define back_htim htim14
+#define forward_htim htim16
+#define aeration_htim htim17
+#define back_tim TIM14
+#define forward_tim TIM16
+#define aeration_tim TIM17
 #define endPointA_Pin LL_GPIO_PIN_0
 #define endPointA_GPIO_Port GPIOA
 #define endPointB_Pin LL_GPIO_PIN_1
@@ -99,39 +107,30 @@ void Error_Handler(void);
 #define statusLed_GPIO_Port GPIOA
 #define motorEN_DIAG_Pin LL_GPIO_PIN_10
 #define motorEN_DIAG_GPIO_Port GPIOA
-#ifndef NVIC_PRIORITYGROUP_0
-#define NVIC_PRIORITYGROUP_0         ((uint32_t)0x00000007) /*!< 0 bit  for pre-emption priority,
-                                                                 4 bits for subpriority */
-#define NVIC_PRIORITYGROUP_1         ((uint32_t)0x00000006) /*!< 1 bit  for pre-emption priority,
-                                                                 3 bits for subpriority */
-#define NVIC_PRIORITYGROUP_2         ((uint32_t)0x00000005) /*!< 2 bits for pre-emption priority,
-                                                                 2 bits for subpriority */
-#define NVIC_PRIORITYGROUP_3         ((uint32_t)0x00000004) /*!< 3 bits for pre-emption priority,
-                                                                 1 bit  for subpriority */
-#define NVIC_PRIORITYGROUP_4         ((uint32_t)0x00000003) /*!< 4 bits for pre-emption priority,
-                                                                 0 bit  for subpriority */
-#endif
 /* USER CODE BEGIN Private defines */
 
-#define MD_A_EN motorEN_DIAG_Pin
-#define MD_A_CS motorCurrentSense_Pin
-#define MD_A_INA outA_Pin
-#define MD_A_INB outB_Pin
-#define MD_A_PWM PWM_Pin
-#define MD_PORT PWM_Pin
+typedef enum Scenario {
+    AERATION,
+    BACK,
+    FORWARD,
+    CLOSED,
+    WAIT
+} Scenario;
 
+//#define aeration    ((uint8_t)0x00U)  // 0000 A=0 B=0 провертивание
+//#define toAeration  ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе открытия на првоертивание люк между закрытым и поднятым положением
+//#define closed      ((uint8_t)0x03U)  // 0011 A=1 B=1 люк закрыт, среднее положение
+//#define toOpen      ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе полного открытия люк между закрытым и полностью сдвинутым назад положением
+//#define open        ((uint8_t)0x00U)  // 0000 A=0 B=0 полностью открылся
 
-#define leftRotation 1                    // todo биты левого вращение
-#define rightRotation 2                   // todo биты правого вращения
-#define rotationStopped ((uint8_t)0x00U)  // togo биты остановки
+#define aeration    ((uint8_t)0x03U)  // 0000 A=1 B=1 провертивание
+#define toAeration  ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе открытия на првоертивание люк между закрытым и поднятым положением
+#define closed      ((uint8_t)0x00U)  // 0011 A=0 B=0 люк закрыт, среднее положение
+#define toOpen      ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе полного открытия люк между закрытым и полностью сдвинутым назад положением
+#define open        ((uint8_t)0x03U)  // 0000 A=1 B=1 полностью открылся
 
-#define aeration    ((uint8_t)0x00U)  // 0000 A=0 B=0 првоертивание
-#define toAeration  ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе открытия на првоертивание
-#define closed      ((uint8_t)0x03U)  // 0011 A=1 B=1 закрыт
-#define toOpen      ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе полного открытия
-#define open        ((uint8_t)0x00U)  // 0000 A=0 B=0 полностью открылся
+#define logPushTime 500
 
-#define delayPushTime ((uint32_t)0x12CU)
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
