@@ -9,4 +9,9 @@
 
 # BMW-32F030P4
 req: git@github.com:pecherskiy-v/monstermoto-library-lite.git
-Core\VNH2SP30\...
+
+нужно склонировать в проект, в директорию "Core\VNH2SP30\"
+
+это библиотека работы с драйвером VNH2SP30
+
+https://github.com/pecherskiy-v/monstermoto-library-lite
