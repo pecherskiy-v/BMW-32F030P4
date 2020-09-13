@@ -15,3 +15,9 @@ req: git@github.com:pecherskiy-v/monstermoto-library-lite.git
 это библиотека работы с драйвером VNH2SP30
 
 https://github.com/pecherskiy-v/monstermoto-library-lite
+
+
+#### Video
+- https://youtu.be/Y4bCqOt50oQ движение тросов
+- https://youtu.be/3sa6kR8XdqA тестирование на стоде часть первая
+- https://youtu.be/2PSHWo_YOpY
