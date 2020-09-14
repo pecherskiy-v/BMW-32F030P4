@@ -50,7 +50,6 @@ TIM_HandleTypeDef htim17;
 bool longPush = false;
 bool motorEnable = false;
 uint8_t target = 0x00U;
-uint8_t subTarget = 0x00U;
 uint8_t endPoint = 0x00U;
 
 bool stopAfterLongPush = false;
@@ -747,7 +746,7 @@ void aerationScenario(void)
   // start 00
   if (endPoint == closed) {
     motorEnable = true;
-    motorState = CLOCKWISE;
+    motorState = COUNTERCLOCKWISE;
   }
 
   // wait 01
@@ -764,7 +763,7 @@ void closedScenario(void)
   // start 01
   if (endPoint == toAeration) {
     motorEnable = true;
-    motorState = COUNTERCLOCKWISE;
+    motorState = CLOCKWISE;
   }
 
   // wait 10
@@ -776,10 +775,10 @@ void closedScenario(void)
   // rollback 00
   if (endPoint == toOpen && !motorEnable) {
     motorEnable = true;
-    motorState = CLOCKWISE;
+    motorState = COUNTERCLOCKWISE;
   }
 
-  if (endPoint == closed && motorState == CLOCKWISE) {
+  if (endPoint == closed && motorState == COUNTERCLOCKWISE) {
     motorEnable = false;
     motorState = BRAKETOGND;
     longPushLock = true;
@@ -794,7 +793,7 @@ void backScenario(void)
     // start 00
     if (endPoint == closed || endPoint == toOpen) {
       motorEnable = true;
-      motorState = COUNTERCLOCKWISE;
+      motorState = CLOCKWISE;
     }
     // wait 11
     if (endPoint == open) {
@@ -815,7 +814,7 @@ void forwardScenario(void)
     // start 10 || 11
     if (endPoint == open || endPoint == toOpen) {
       motorEnable = true;
-      motorState = CLOCKWISE;
+      motorState = COUNTERCLOCKWISE;
     }
 
     // wait 00
