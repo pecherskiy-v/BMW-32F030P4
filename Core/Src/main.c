@@ -41,48 +41,42 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-TIM_HandleTypeDef htim14;
-TIM_HandleTypeDef htim16;
-TIM_HandleTypeDef htim17;
+CRC_HandleTypeDef hcrc;
 
 /* USER CODE BEGIN PV */
 //uint32_t abc = 0;
-bool longPush = false;
-bool motorEnable = false;
-uint8_t target = 0x00U;
-uint8_t endPoint = 0x00U;
+volatile bool longPush = false;
+volatile bool motorEnable = false;
+volatile uint8_t target = 0x00U;
+volatile uint8_t endPoint = 0x00U;
 
-bool stopAfterLongPush = false;
+volatile bool stopAfterLongPush = false;
 
 volatile uint32_t aeration_time_irq = 0;
 volatile uint32_t forward_time_irq = 0;
 volatile uint32_t back_time_irq = 0;
 
 volatile bool longPushLock = false;
+volatile bool enableWrite = false;
 
-MotorState motorState = BRAKETOGND;
-MotorState lastMotorState = BRAKETOGND;
-Scenario selectScenario = WAIT;
+volatile uint32_t res_addr = 0;
+myBuf_t flashBuffer[BUFFSIZE] = {0x22, 0x00};
+
+volatile MotorState motorState = BRAKETOGND;
+volatile Scenario selectScenario = WAIT;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-
 void MX_GPIO_Init(void);
-
 void MX_TIM3_Init(void);
-
 void MX_ADC_Init(void);
-
 void MX_TIM1_Init(void);
-
 static void MX_TIM14_Init(void);
-
 static void MX_TIM16_Init(void);
-
 static void MX_TIM17_Init(void);
-
+static void MX_CRC_Init(void);
 static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -97,7 +91,8 @@ static void MX_NVIC_Init(void);
   * @brief  The application entry point.
   * @retval int
   */
-int main(void) {
+int main(void)
+{
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -126,6 +121,7 @@ int main(void) {
   MX_TIM14_Init();
   MX_TIM16_Init();
   MX_TIM17_Init();
+  MX_CRC_Init();
 
   /* Initialize interrupts */
   MX_NVIC_Init();
@@ -144,7 +140,12 @@ int main(void) {
 
   MotorDriver__init(FULLBRIDGE);
   LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
-//  MotorDriver__turnOffMotor(motorDriver);
+  res_addr = flash_search_address(STARTADDR, BUFFSIZE * DATAWIDTH);
+  read_last_data_in_flash(flashBuffer);
+  while (flashBuffer[subTarget] == 0x22) {
+    read_last_data_in_flash(flashBuffer);
+    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -194,26 +195,30 @@ int main(void) {
       stopAfterLongPush = false;
     }
 
-    if (endPoint == closed) {
+    if (flashBuffer[subTarget] == toAeration) {
       LL_GPIO_SetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
-    } else {
       LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
     }
 
     switch (selectScenario) {
-      case AERATION:
-        aerationScenario();
-        break;
       case BACK:
+        LL_GPIO_SetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
         backScenario();
         break;
       case FORWARD:
+        LL_GPIO_SetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
         forwardScenario();
         break;
-      case CLOSED:
-        closedScenario();
+      case CLOSED_BACK:
+        LL_GPIO_SetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
+        closedBackScenario();
+        break;
+      case CLOSED_FRONT:
+        LL_GPIO_SetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
+        closedFrontScenario();
         break;
       case WAIT:
+        LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);
       default:
         MotorDriver__turnOffMotor();
         motorEnable = false;
@@ -243,42 +248,49 @@ int main(void) {
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void) {
+void SystemClock_Config(void)
+{
   LL_FLASH_SetLatency(LL_FLASH_LATENCY_1);
-  while (LL_FLASH_GetLatency() != LL_FLASH_LATENCY_1) {
+  while(LL_FLASH_GetLatency() != LL_FLASH_LATENCY_1)
+  {
   }
   LL_RCC_HSE_Enable();
 
-  /* Wait till HSE is ready */
-  while (LL_RCC_HSE_IsReady() != 1) {
+   /* Wait till HSE is ready */
+  while(LL_RCC_HSE_IsReady() != 1)
+  {
 
   }
   LL_RCC_HSI14_Enable();
 
-  /* Wait till HSI14 is ready */
-  while (LL_RCC_HSI14_IsReady() != 1) {
+   /* Wait till HSI14 is ready */
+  while(LL_RCC_HSI14_IsReady() != 1)
+  {
 
   }
   LL_RCC_HSI14_SetCalibTrimming(16);
   LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSE_DIV_1, LL_RCC_PLL_MUL_6);
   LL_RCC_PLL_Enable();
 
-  /* Wait till PLL is ready */
-  while (LL_RCC_PLL_IsReady() != 1) {
+   /* Wait till PLL is ready */
+  while(LL_RCC_PLL_IsReady() != 1)
+  {
 
   }
   LL_RCC_SetAHBPrescaler(LL_RCC_SYSCLK_DIV_1);
   LL_RCC_SetAPB1Prescaler(LL_RCC_APB1_DIV_1);
   LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_PLL);
 
-  /* Wait till System clock is ready */
-  while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL) {
+   /* Wait till System clock is ready */
+  while(LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL)
+  {
 
   }
   LL_SetSystemCoreClock(48000000);
 
-  /* Update the time base */
-  if (HAL_InitTick(TICK_INT_PRIORITY) != HAL_OK) {
+   /* Update the time base */
+  if (HAL_InitTick (TICK_INT_PRIORITY) != HAL_OK)
+  {
     Error_Handler();
   }
   LL_RCC_HSI14_EnableADCControl();
@@ -288,7 +300,8 @@ void SystemClock_Config(void) {
   * @brief NVIC Configuration.
   * @retval None
   */
-static void MX_NVIC_Init(void) {
+static void MX_NVIC_Init(void)
+{
   /* EXTI2_3_IRQn interrupt configuration */
   NVIC_SetPriority(EXTI2_3_IRQn, 0);
   NVIC_EnableIRQ(EXTI2_3_IRQn);
@@ -302,7 +315,8 @@ static void MX_NVIC_Init(void) {
   * @param None
   * @retval None
   */
-void MX_ADC_Init(void) {
+void MX_ADC_Init(void)
+{
 
   /* USER CODE BEGIN ADC_Init 0 */
 
@@ -353,11 +367,42 @@ void MX_ADC_Init(void) {
 }
 
 /**
+  * @brief CRC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRC_Init(void)
+{
+
+  /* USER CODE BEGIN CRC_Init 0 */
+
+  /* USER CODE END CRC_Init 0 */
+
+  /* USER CODE BEGIN CRC_Init 1 */
+
+  /* USER CODE END CRC_Init 1 */
+  hcrc.Instance = CRC;
+  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
+  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
+  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
+  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
+  if (HAL_CRC_Init(&hcrc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRC_Init 2 */
+
+  /* USER CODE END CRC_Init 2 */
+
+}
+
+/**
   * @brief TIM1 Initialization Function
   * @param None
   * @retval None
   */
-void MX_TIM1_Init(void) {
+void MX_TIM1_Init(void)
+{
 
   /* USER CODE BEGIN TIM1_Init 0 */
 
@@ -396,7 +441,8 @@ void MX_TIM1_Init(void) {
   * @param None
   * @retval None
   */
-void MX_TIM3_Init(void) {
+void MX_TIM3_Init(void)
+{
 
   /* USER CODE BEGIN TIM3_Init 0 */
 
@@ -428,7 +474,7 @@ void MX_TIM3_Init(void) {
   TIM_OC_InitStruct.OCMode = LL_TIM_OCMODE_PWM1;
   TIM_OC_InitStruct.OCState = LL_TIM_OCSTATE_DISABLE;
   TIM_OC_InitStruct.OCNState = LL_TIM_OCSTATE_DISABLE;
-  TIM_OC_InitStruct.CompareValue = 1919;
+  TIM_OC_InitStruct.CompareValue = 2279;
   TIM_OC_InitStruct.OCPolarity = LL_TIM_OCPOLARITY_HIGH;
   LL_TIM_OC_Init(TIM3, LL_TIM_CHANNEL_CH2, &TIM_OC_InitStruct);
   LL_TIM_OC_DisableFast(TIM3, LL_TIM_CHANNEL_CH2);
@@ -456,27 +502,32 @@ void MX_TIM3_Init(void) {
   * @param None
   * @retval None
   */
-static void MX_TIM14_Init(void) {
+static void MX_TIM14_Init(void)
+{
 
   /* USER CODE BEGIN TIM14_Init 0 */
 
   /* USER CODE END TIM14_Init 0 */
 
+  LL_TIM_InitTypeDef TIM_InitStruct = {0};
+
+  /* Peripheral clock enable */
+  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM14);
+
+  /* TIM14 interrupt Init */
+  NVIC_SetPriority(TIM14_IRQn, 0);
+  NVIC_EnableIRQ(TIM14_IRQn);
+
   /* USER CODE BEGIN TIM14_Init 1 */
 
   /* USER CODE END TIM14_Init 1 */
-  htim14.Instance = TIM14;
-  htim14.Init.Prescaler = 959;
-  htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim14.Init.Period = 12500;
-  htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_Base_Init(&htim14) != HAL_OK) {
-    Error_Handler();
-  }
-  if (HAL_TIM_OnePulse_Init(&htim14, TIM_OPMODE_SINGLE) != HAL_OK) {
-    Error_Handler();
-  }
+  TIM_InitStruct.Prescaler = 959;
+  TIM_InitStruct.CounterMode = LL_TIM_COUNTERMODE_UP;
+  TIM_InitStruct.Autoreload = 12500;
+  TIM_InitStruct.ClockDivision = LL_TIM_CLOCKDIVISION_DIV1;
+  LL_TIM_Init(TIM14, &TIM_InitStruct);
+  LL_TIM_EnableARRPreload(TIM14);
+  LL_TIM_SetOnePulseMode(TIM14, LL_TIM_ONEPULSEMODE_SINGLE);
   /* USER CODE BEGIN TIM14_Init 2 */
 
   /* USER CODE END TIM14_Init 2 */
@@ -488,28 +539,33 @@ static void MX_TIM14_Init(void) {
   * @param None
   * @retval None
   */
-static void MX_TIM16_Init(void) {
+static void MX_TIM16_Init(void)
+{
 
   /* USER CODE BEGIN TIM16_Init 0 */
 
   /* USER CODE END TIM16_Init 0 */
 
+  LL_TIM_InitTypeDef TIM_InitStruct = {0};
+
+  /* Peripheral clock enable */
+  LL_APB1_GRP2_EnableClock(LL_APB1_GRP2_PERIPH_TIM16);
+
+  /* TIM16 interrupt Init */
+  NVIC_SetPriority(TIM16_IRQn, 0);
+  NVIC_EnableIRQ(TIM16_IRQn);
+
   /* USER CODE BEGIN TIM16_Init 1 */
 
   /* USER CODE END TIM16_Init 1 */
-  htim16.Instance = TIM16;
-  htim16.Init.Prescaler = 959;
-  htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim16.Init.Period = 12500;
-  htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim16.Init.RepetitionCounter = 0;
-  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_Base_Init(&htim16) != HAL_OK) {
-    Error_Handler();
-  }
-  if (HAL_TIM_OnePulse_Init(&htim16, TIM_OPMODE_SINGLE) != HAL_OK) {
-    Error_Handler();
-  }
+  TIM_InitStruct.Prescaler = 959;
+  TIM_InitStruct.CounterMode = LL_TIM_COUNTERMODE_UP;
+  TIM_InitStruct.Autoreload = 12500;
+  TIM_InitStruct.ClockDivision = LL_TIM_CLOCKDIVISION_DIV1;
+  TIM_InitStruct.RepetitionCounter = 0;
+  LL_TIM_Init(TIM16, &TIM_InitStruct);
+  LL_TIM_EnableARRPreload(TIM16);
+  LL_TIM_SetOnePulseMode(TIM16, LL_TIM_ONEPULSEMODE_SINGLE);
   /* USER CODE BEGIN TIM16_Init 2 */
 
   /* USER CODE END TIM16_Init 2 */
@@ -521,28 +577,33 @@ static void MX_TIM16_Init(void) {
   * @param None
   * @retval None
   */
-static void MX_TIM17_Init(void) {
+static void MX_TIM17_Init(void)
+{
 
   /* USER CODE BEGIN TIM17_Init 0 */
 
   /* USER CODE END TIM17_Init 0 */
 
+  LL_TIM_InitTypeDef TIM_InitStruct = {0};
+
+  /* Peripheral clock enable */
+  LL_APB1_GRP2_EnableClock(LL_APB1_GRP2_PERIPH_TIM17);
+
+  /* TIM17 interrupt Init */
+  NVIC_SetPriority(TIM17_IRQn, 0);
+  NVIC_EnableIRQ(TIM17_IRQn);
+
   /* USER CODE BEGIN TIM17_Init 1 */
 
   /* USER CODE END TIM17_Init 1 */
-  htim17.Instance = TIM17;
-  htim17.Init.Prescaler = 959;
-  htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim17.Init.Period = 12500;
-  htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim17.Init.RepetitionCounter = 0;
-  htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_Base_Init(&htim17) != HAL_OK) {
-    Error_Handler();
-  }
-  if (HAL_TIM_OnePulse_Init(&htim17, TIM_OPMODE_SINGLE) != HAL_OK) {
-    Error_Handler();
-  }
+  TIM_InitStruct.Prescaler = 959;
+  TIM_InitStruct.CounterMode = LL_TIM_COUNTERMODE_UP;
+  TIM_InitStruct.Autoreload = 12500;
+  TIM_InitStruct.ClockDivision = LL_TIM_CLOCKDIVISION_DIV1;
+  TIM_InitStruct.RepetitionCounter = 0;
+  LL_TIM_Init(TIM17, &TIM_InitStruct);
+  LL_TIM_EnableARRPreload(TIM17);
+  LL_TIM_SetOnePulseMode(TIM17, LL_TIM_ONEPULSEMODE_SINGLE);
   /* USER CODE BEGIN TIM17_Init 2 */
 
   /* USER CODE END TIM17_Init 2 */
@@ -554,7 +615,8 @@ static void MX_TIM17_Init(void) {
   * @param None
   * @retval None
   */
-void MX_GPIO_Init(void) {
+void MX_GPIO_Init(void)
+{
   LL_EXTI_InitTypeDef EXTI_InitStruct = {0};
   LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
 
@@ -666,24 +728,33 @@ void MX_GPIO_Init(void) {
 
 /* USER CODE BEGIN 4 */
 void GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+  enableWrite = true;
   if (GPIO_Pin == back_Pin) {
     selectScenario = WAIT;
     motorEnable = motorEnable == false;
     HAL_NVIC_DisableIRQ(back_EXTI_IRQn); // сразу же отключаем прерывания на этом пине
     back_time_irq = HAL_GetTick();
-    HAL_TIM_Base_Start_IT(&back_htim); // запускаем таймер
+    LL_TIM_EnableIT_UPDATE(backTIM); // запускаем таймер
+    LL_TIM_EnableCounter(backTIM);
     longPushLock = false;
 
-    if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = BACK;
-    }
+    if (MotorDriver__getMotorState() == BRAKETOGND) {
+      if (endPoint == closed || endPoint == toOpen) {
+        selectScenario = BACK;
+        return;
+      }
 
-    if (endPoint == toAeration && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = CLOSED;
-    }
+      if (endPoint == open) {
+        if (flashBuffer[subTarget] == toAeration) {
+          selectScenario = CLOSED_BACK;
+          return;
+        }
+      }
 
-    if (endPoint == toOpen && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = BACK;
+      if (endPoint == toAeration) {
+        selectScenario = CLOSED_BACK;
+        return;
+      }
     }
   }
 
@@ -692,19 +763,27 @@ void GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     motorEnable = motorEnable == false;
     HAL_NVIC_DisableIRQ(forward_EXTI_IRQn); // сразу же отключаем прерывания на этом пине
     forward_time_irq = HAL_GetTick();
-    HAL_TIM_Base_Start_IT(&forward_htim); // запускаем таймер
+    LL_TIM_EnableIT_UPDATE(forwardTIM); // запускаем таймер
+    LL_TIM_EnableCounter(forwardTIM);
     longPushLock = false;
 
-    if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = AERATION;
-    }
+    if (MotorDriver__getMotorState() == BRAKETOGND) {
+      if (endPoint == closed || endPoint == toAeration) {
+        selectScenario = FORWARD;
+        return;
+      }
 
-    if (endPoint == open && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = FORWARD;
-    }
+      if (endPoint == open) {
+        if (flashBuffer[subTarget] == toOpen) {
+          selectScenario = CLOSED_FRONT;
+          return;
+        }
+      }
 
-    if (endPoint == toOpen && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = FORWARD;
+      if (endPoint == toOpen) {
+        selectScenario = CLOSED_FRONT;
+        return;
+      }
     }
   }
 
@@ -713,23 +792,31 @@ void GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     motorEnable = motorEnable == false;
     HAL_NVIC_DisableIRQ(aeration_EXTI_IRQn); // сразу же отключаем прерывания на этом пине
     aeration_time_irq = HAL_GetTick();
-    HAL_TIM_Base_Start_IT(&aeration_htim); // запускаем таймер
+    LL_TIM_EnableIT_UPDATE(aerationTIM); // запускаем таймер
+    LL_TIM_EnableCounter(aerationTIM);
     longPushLock = false;
 
-    if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = AERATION;
-    }
+    if (MotorDriver__getMotorState() == BRAKETOGND) {
+      if (endPoint == closed || endPoint == toAeration) {
+        selectScenario = FORWARD;
+        return;
+      }
 
-    if (endPoint == toAeration && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = CLOSED;
-    }
+      if (endPoint == open) {
+        if (flashBuffer[subTarget] == toOpen) {
+          selectScenario = CLOSED_FRONT;
+          return;
+        }
+        if (flashBuffer[subTarget] == toAeration) {
+          selectScenario = CLOSED_BACK;
+          return;
+        }
+      }
 
-    if (endPoint == toOpen && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = FORWARD;
-    }
-
-    if (endPoint == open && MotorDriver__getMotorState() == BRAKETOGND) {
-      selectScenario = FORWARD;
+      if (endPoint == toOpen) {
+        selectScenario = CLOSED_FRONT;
+        return;
+      }
     }
   }
 }
@@ -741,120 +828,96 @@ void TIM1_Callback(void) {
   }
 }
 
-void aerationScenario(void)
-{
-  // start 00
-  if (endPoint == closed) {
-    motorEnable = true;
-    motorState = COUNTERCLOCKWISE;
-  }
-
-  // wait 01
-  if (endPoint == toAeration) {
-    // stop
-    motorEnable = false;
-    motorState = BRAKETOGND;
-    longPushLock = true;
-    selectScenario = WAIT;
-  }
-}
-void closedScenario(void)
-{
-  // start 01
-  if (endPoint == toAeration) {
-    motorEnable = true;
-    motorState = CLOCKWISE;
-  }
-
-  // wait 10
-  if (endPoint == toOpen && motorEnable) {
-    motorEnable = false;
-    motorState = BRAKETOGND;
-  }
-
-  // rollback 00
-  if (endPoint == toOpen && !motorEnable) {
-    motorEnable = true;
-    motorState = COUNTERCLOCKWISE;
-  }
-
-  if (endPoint == closed && motorState == COUNTERCLOCKWISE) {
-    motorEnable = false;
-    motorState = BRAKETOGND;
-    longPushLock = true;
-    selectScenario = WAIT;
-  }
-}
-void backScenario(void)
-{
-  if (endPoint == toAeration) {
-    closedScenario();
-  } else {
-    // start 00
-    if (endPoint == closed || endPoint == toOpen) {
-      motorEnable = true;
-      motorState = CLOCKWISE;
-    }
-    // wait 11
-    if (endPoint == open) {
-      motorEnable = false;
-      motorState = BRAKETOGND;
-      longPushLock = true;
-      selectScenario = WAIT;
-    }
-    // stop
-  }
-}
-void forwardScenario(void)
-{
-  if (endPoint == closed && MotorDriver__getMotorState() == BRAKETOGND) {
-    // start 00
-    aerationScenario();
-  } else {
-    // start 10 || 11
-    if (endPoint == open || endPoint == toOpen) {
-      motorEnable = true;
-      motorState = COUNTERCLOCKWISE;
-    }
-
-    // wait 00
-    if (endPoint == closed) {
-      // stop
-      motorEnable = false;
-      motorState = BRAKETOGND;
-      longPushLock = true;
-      selectScenario = WAIT;
-    }
-  }
-}
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  if (htim->Instance == aeration_tim) {
+void BACK_Callback(void) {
+  if (LL_TIM_IsActiveFlag_UPDATE(backTIM)) {
+    LL_TIM_ClearFlag_UPDATE(backTIM);
+    LL_TIM_DisableIT_UPDATE(backTIM); // останавливаем таймер
     LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
-    HAL_TIM_Base_Stop_IT(&aeration_htim); // останавливаем таймер
-
-    __HAL_GPIO_EXTI_CLEAR_IT(aeration_Pin);  // очищаем бит EXTI_PR
-    NVIC_ClearPendingIRQ(aeration_EXTI_IRQn); // очищаем бит NVIC_ICPRx
-    HAL_NVIC_EnableIRQ(aeration_EXTI_IRQn);   // включаем внешнее прерывание
-  }
-
-  if (htim->Instance == forward_tim) {
-    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
-    HAL_TIM_Base_Stop_IT(&forward_htim); // останавливаем таймер
-
-    __HAL_GPIO_EXTI_CLEAR_IT(forward_Pin);  // очищаем бит EXTI_PR
-    NVIC_ClearPendingIRQ(forward_EXTI_IRQn); // очищаем бит NVIC_ICPRx
-    HAL_NVIC_EnableIRQ(forward_EXTI_IRQn);   // включаем внешнее прерывание
-  }
-
-  if (htim->Instance == back_tim) {
-    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
-    HAL_TIM_Base_Stop_IT(&back_htim); // останавливаем таймер
 
     __HAL_GPIO_EXTI_CLEAR_IT(back_Pin);  // очищаем бит EXTI_PR
     NVIC_ClearPendingIRQ(back_EXTI_IRQn); // очищаем бит NVIC_ICPRx
     HAL_NVIC_EnableIRQ(back_EXTI_IRQn);   // включаем внешнее прерывание
   }
+}
+
+void FORWARD_Callback(void) {
+  if (LL_TIM_IsActiveFlag_UPDATE(forwardTIM)) {
+    LL_TIM_ClearFlag_UPDATE(forwardTIM);
+    LL_TIM_DisableIT_UPDATE(forwardTIM); // останавливаем таймер
+    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
+
+    __HAL_GPIO_EXTI_CLEAR_IT(forward_Pin);  // очищаем бит EXTI_PR
+    NVIC_ClearPendingIRQ(forward_EXTI_IRQn); // очищаем бит NVIC_ICPRx
+    HAL_NVIC_EnableIRQ(forward_EXTI_IRQn);   // включаем внешнее прерывание
+  }
+}
+
+void AERATION_Callback(void) {
+  if (LL_TIM_IsActiveFlag_UPDATE(aerationTIM)) {
+    LL_TIM_ClearFlag_UPDATE(aerationTIM);
+    LL_TIM_DisableIT_UPDATE(aerationTIM); // останавливаем таймер
+    LL_GPIO_ResetOutputPin(statusLed_GPIO_Port, statusLed_Pin);// разрешаем кнопать не чаще чем раз в 200мс
+
+    __HAL_GPIO_EXTI_CLEAR_IT(aeration_Pin);  // очищаем бит EXTI_PR
+    NVIC_ClearPendingIRQ(aeration_EXTI_IRQn); // очищаем бит NVIC_ICPRx
+    HAL_NVIC_EnableIRQ(aeration_EXTI_IRQn);   // включаем внешнее прерывание
+  }
+}
+
+void backScenario(void) {
+  if (endPoint == open && motorState == CLOCKWISE) {
+    stopMotor();
+    flashBuffer[subTarget] = toOpen;
+    if (enableWrite) {
+      enableWrite = false;
+      write_to_flash(flashBuffer);
+    }
+    return;
+  }
+  motorEnable = true;
+  motorState = CLOCKWISE;
+  return;
+}
+
+void closedFrontScenario(void) {
+  if (endPoint == closed) {
+    stopMotor();
+    return;
+  }
+  motorEnable = true;
+  motorState = COUNTERCLOCKWISE;
+  return;
+}
+
+void closedBackScenario(void) {
+  if (endPoint == closed) {
+    stopMotor();
+    return;
+  }
+  motorEnable = true;
+  motorState = CLOCKWISE;
+  return;
+}
+
+void forwardScenario(void) {
+  if (endPoint == open && motorState == COUNTERCLOCKWISE) {
+    flashBuffer[subTarget] = toAeration;
+    stopMotor();
+    if (enableWrite) {
+      enableWrite = false;
+      write_to_flash(flashBuffer);
+    }
+    return;
+  }
+  motorEnable = true;
+  motorState = COUNTERCLOCKWISE;
+}
+
+void stopMotor(void) {
+  motorEnable = false;
+  motorState = BRAKETOGND;
+  longPushLock = true;
+  selectScenario = WAIT;
 }
 
 void getEndPointStatus() {
@@ -867,7 +930,8 @@ void getEndPointStatus() {
   * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
-void Error_Handler(void) {
+void Error_Handler(void)
+{
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
 

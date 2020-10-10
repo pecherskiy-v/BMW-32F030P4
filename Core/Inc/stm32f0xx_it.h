@@ -61,6 +61,9 @@ void TIM16_IRQHandler(void);
 void TIM17_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 void TIM1_Callback(void);
+void BACK_Callback(void);
+void FORWARD_Callback(void);
+void AERATION_Callback(void);
 void GPIO_EXTI_Callback(uint32_t GPIO_Pin);
 /* USER CODE END EFP */
 

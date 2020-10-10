@@ -21,3 +21,13 @@ https://github.com/pecherskiy-v/monstermoto-library-lite
 - https://youtu.be/Y4bCqOt50oQ движение тросов
 - https://youtu.be/3sa6kR8XdqA тестирование на стоде часть первая
 - https://youtu.be/2PSHWo_YOpY
+
+
+##PIN OUT
+| PIN |   NAME   |  ALIAS  |   COLOR  |
+|-----|----------|---------|----------|
+| PA0 |концевик 1|endPointA|жёлт.-фио |
+| PA1 |концевик 2|endPointB|жёлт.-чёрн|
+
+##SEE
+https://istarik.ru/blog/stm32/142.html

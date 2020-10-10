@@ -47,6 +47,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stdlib.h>
 #include "../VNH2SP30/motordriver.h"
+#include "../FlashPROM/FlashPROM.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -62,10 +63,13 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 void getEndPointStatus(void);
-void aerationScenario(void);
-void closedScenario(void);
+
 void backScenario(void);
 void forwardScenario(void);
+void closedBackScenario(void);
+void closedFrontScenario(void);
+
+void stopMotor(void);
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -76,12 +80,9 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define back_htim htim14
-#define forward_htim htim16
-#define aeration_htim htim17
-#define back_tim TIM14
-#define forward_tim TIM16
-#define aeration_tim TIM17
+#define backTIM TIM14
+#define forwardTIM TIM16
+#define aerationTIM TIM17
 #define endPointA_Pin LL_GPIO_PIN_0
 #define endPointA_GPIO_Port GPIOA
 #define endPointB_Pin LL_GPIO_PIN_1
@@ -110,24 +111,19 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 
 typedef enum Scenario {
-    AERATION,
     BACK,
     FORWARD,
-    CLOSED,
-    WAIT
+    CLOSED_BACK,
+    CLOSED_FRONT,
+    WAIT,
 } Scenario;
 
-//#define aeration    ((uint8_t)0x00U)  // 0000 A=0 B=0 провертивание
-//#define toAeration  ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе открытия на првоертивание люк между закрытым и поднятым положением
-//#define closed      ((uint8_t)0x03U)  // 0011 A=1 B=1 люк закрыт, среднее положение
-//#define toOpen      ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе полного открытия люк между закрытым и полностью сдвинутым назад положением
-//#define open        ((uint8_t)0x00U)  // 0000 A=0 B=0 полностью открылся
+#define toAeration    ((uint16_t)0x02U)  // 0010 A=0 B=1 провертивание
+#define closed        ((uint16_t)0x03U)  // 0011 A=1 B=1 люк закрыт, среднее положение
+#define toOpen        ((uint16_t)0x01U)  // 0001 A=1 B=0 в процессе полного открытия люк между закрытым и полностью сдвинутым назад положением
+#define open          ((uint16_t)0x00U)  // 0000 A=0 B=0 полностью открылся
 
-#define aeration    ((uint8_t)0x03U)  // 0000 A=1 B=1 провертивание
-#define toAeration  ((uint8_t)0x02U)  // 0010 A=0 B=1 в процессе открытия на првоертивание люк между закрытым и поднятым положением
-#define closed      ((uint8_t)0x00U)  // 0011 A=0 B=0 люк закрыт, среднее положение
-#define toOpen      ((uint8_t)0x01U)  // 0001 A=1 B=0 в процессе полного открытия люк между закрытым и полностью сдвинутым назад положением
-#define open        ((uint8_t)0x03U)  // 0000 A=1 B=1 полностью открылся
+#define subTarget 0
 
 #define logPushTime 500
 
