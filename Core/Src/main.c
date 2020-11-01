@@ -880,8 +880,10 @@ void backScenario(void) {
 }
 
 void closedFrontScenario(void) {
-  if (endPoint == closed) {
-    stopMotor();
+  // сначала до проветривания и потом на закрытие.
+  if (endPoint == toAeration) {
+    // сменили сценарий закрытия.
+    selectScenario = CLOSED_BACK;
     return;
   }
   motorEnable = true;
