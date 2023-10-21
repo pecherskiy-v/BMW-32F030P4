@@ -23,11 +23,21 @@ https://github.com/pecherskiy-v/monstermoto-library-lite
 - https://youtu.be/2PSHWo_YOpY
 
 
-##PIN OUT
+## PIN OUT
 | PIN |   NAME   |  ALIAS  |   COLOR  |
 |-----|----------|---------|----------|
 | PA0 |концевик 1|endPointA|жёлт.-фио |
 | PA1 |концевик 2|endPointB|жёлт.-чёрн|
 
-##SEE
+## SEE
 https://istarik.ru/blog/stm32/142.html
+
+---
+
+# REQ
+
+- [CudeMX](https://www.st.com/content/st_com/en/stm32cubemx.html)
+- [arm-gnu-toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)
+- [openOCD](https://openocd.org/)
+
+---
